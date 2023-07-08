@@ -2,16 +2,16 @@ import asyncio
 from playwright.async_api import async_playwright
 import json
 import os
-from amazon import get_product as get_amazon_product
+from noon import get_product as get_noon_product
 from requests import post
 
-AMAZON = "https://amazon.ca"
+NOON = "https://noon.com"
 
 URLS = {
-    AMAZON: {
+    NOON: {
         "search_field_query": 'input[name="field-keywords"]',
         "search_button_query": 'input[value="Go"]',
-        "product_selector": "div.s-card-container"
+        "product_selector": "div.s-card-container",
     }
 }
 
@@ -22,6 +22,7 @@ def load_auth():
     FILE = os.path.join("Scraper", "auth.json")
     with open(FILE, "r") as f:
         return json.load(f)
+
 
 # place your bright data credentials in auth.json file with keys: "username", "password" and "host"
 cred = load_auth()
@@ -56,6 +57,7 @@ async def get_products(page, search_text, selector, get_product):
 
     async with asyncio.TaskGroup() as tg:
         for div in product_divs:
+
             async def task(p_div):
                 product = await get_product(p_div)
 
@@ -63,10 +65,14 @@ async def get_products(page, search_text, selector, get_product):
                     return
 
                 for word in words:
-                    if not product["name"] or word.lower() not in product["name"].lower():
+                    if (
+                        not product["name"]
+                        or word.lower() not in product["name"].lower()
+                    ):
                         break
                 else:
                     valid_products.append(product)
+
             tg.create_task(task(div))
 
     return valid_products
@@ -80,14 +86,11 @@ def save_results(results):
 
 
 def post_results(results, endpoint, search_text, source):
-    headers = {
-        "Content-Type": "application/json"
-    }
+    headers = {"Content-Type": "application/json"}
     data = {"data": results, "search_text": search_text, "source": source}
 
     print("Sending request to", endpoint)
-    response = post("http://localhost:5000" + endpoint,
-                    headers=headers, json=data)
+    response = post("http://localhost:5000" + endpoint, headers=headers, json=data)
     print("Status code:", response.status_code)
 
 
@@ -98,7 +101,7 @@ async def main(url, search_text, response_route):
         return
 
     async with async_playwright() as pw:
-        print('Connecting to browser.')
+        print("Connecting to browser.")
         browser = await pw.chromium.connect_over_cdp(browser_url)
         page = await browser.new_page()
         print("Connected.")
@@ -106,18 +109,23 @@ async def main(url, search_text, response_route):
         print("Loaded initial page.")
         search_page = await search(metadata, page, search_text)
 
-        def func(x): return None
-        if url == AMAZON:
-            func = get_amazon_product
-        else:
-            raise Exception('Invalid URL')
+        def func(x):
+            return None
 
-        results = await get_products(search_page, search_text, metadata["product_selector"], func)
+        if url == NOON:
+            func = get_noon_product
+        else:
+            raise Exception("Invalid URL")
+
+        results = await get_products(
+            search_page, search_text, metadata["product_selector"], func
+        )
         print("Saving results.")
         post_results(results, response_route, search_text, url)
 
         await browser.close()
 
+
 if __name__ == "__main__":
     # test script
-    asyncio.run(main(AMAZON, "ryzen 9 3950x"))
+    asyncio.run(main(NOON, "ryzen 9 3950x"))
